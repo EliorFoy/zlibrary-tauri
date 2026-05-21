@@ -1,0 +1,177 @@
+name: 'Publish'
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # ==================== GUI Build (Tauri) ====================
+  publish-gui:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+            name: 'GUI macOS ARM64'
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+            name: 'GUI macOS Intel'
+          - platform: 'ubuntu-22.04'
+            args: ''
+            name: 'GUI Linux'
+          - platform: 'windows-latest'
+            args: ''
+            name: 'GUI Windows'
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.args != '' && matrix.args || 'x86_64-unknown-linux-gnu' }}
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri GUI App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Z-Library NoProxy GUI ${{ github.ref_name }}'
+          releaseBody: 'GUI version built with Tauri v2.'
+          releaseDraft: true
+          prerelease: false
+          args: --features gui ${{ matrix.args }}
+
+      - name: Upload GUI artifacts
+        uses: actions/upload-artifact@v4
+        if: matrix.platform == 'ubuntu-22.04'
+        with:
+          name: gui-linux-${{ matrix.platform }}
+          path: |
+            src-tauri/target/*/release/bundle/**/*.deb
+            src-tauri/target/*/release/bundle/**/*.AppImage
+            src-tauri/target/*/release/bundle/**/*.rpm
+
+      - name: Upload GUI artifacts (macOS)
+        uses: actions/upload-artifact@v4
+        if: contains(matrix.platform, 'macos')
+        with:
+          name: gui-macos-${{ matrix.args }}
+          path: |
+            src-tauri/target/*/release/bundle/**/*.dmg
+            src-tauri/target/*/release/bundle/**/*.app
+
+      - name: Upload GUI artifacts (Windows)
+        uses: actions/upload-artifact@v4
+        if: matrix.platform == 'windows-latest'
+        with:
+          name: gui-windows-${{ matrix.platform }}
+          path: |
+            src-tauri/target/*/release/bundle/**/*.msi
+            src-tauri/target/*/release/bundle/**/*.exe
+
+  # ==================== CLI Build ====================
+  publish-cli:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            target: 'aarch64-apple-darwin'
+            name: 'CLI macOS ARM64'
+          - platform: 'macos-latest'
+            target: 'x86_64-apple-darwin'
+            name: 'CLI macOS Intel'
+          - platform: 'ubuntu-22.04'
+            target: 'x86_64-unknown-linux-gnu'
+            name: 'CLI Linux'
+          - platform: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+            name: 'CLI Windows'
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build CLI binaries
+        working-directory: src-tauri
+        run: cargo build --release --features cli --bin zlibrary-cli --bin zlibrary-diagnose --bin zlibrary-fetch-challenge --bin zlibrary-show-script --bin zlibrary-test-search --bin zlibrary-regtest --target ${{ matrix.target }}
+
+      - name: Package CLI binaries (Unix)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          mkdir -p cli-release
+          cp src-tauri/target/${{ matrix.target }}/release/zlibrary-cli cli-release/
+          cp src-tauri/target/${{ matrix.target }}/release/zlibrary-diagnose cli-release/
+          cp src-tauri/target/${{ matrix.target }}/release/zlibrary-fetch-challenge cli-release/
+          cp src-tauri/target/${{ matrix.target }}/release/zlibrary-show-script cli-release/
+          cp src-tauri/target/${{ matrix.target }}/release/zlibrary-test-search cli-release/
+          cp src-tauri/target/${{ matrix.target }}/release/zlibrary-regtest cli-release/
+          cd cli-release && tar -czvf zlibrary-cli-${{ matrix.target }}.tar.gz *
+
+      - name: Package CLI binaries (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          mkdir -p cli-release
+          Copy-Item src-tauri/target/${{ matrix.target }}/release/zlibrary-cli.exe cli-release/
+          Copy-Item src-tauri/target/${{ matrix.target }}/release/zlibrary-diagnose.exe cli-release/
+          Copy-Item src-tauri/target/${{ matrix.target }}/release/zlibrary-fetch-challenge.exe cli-release/
+          Copy-Item src-tauri/target/${{ matrix.target }}/release/zlibrary-show-script.exe cli-release/
+          Copy-Item src-tauri/target/${{ matrix.target }}/release/zlibrary-test-search.exe cli-release/
+          Copy-Item src-tauri/target/${{ matrix.target }}/release/zlibrary-regtest.exe cli-release/
+          Compress-Archive -Path cli-release/* -DestinationPath cli-release/zlibrary-cli-${{ matrix.target }}.zip
+
+      - name: Upload CLI artifacts (Unix)
+        if: matrix.platform != 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: cli-release/zlibrary-cli-${{ matrix.target }}.tar.gz
+
+      - name: Upload CLI artifacts (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: cli-release/zlibrary-cli-${{ matrix.target }}.zip
