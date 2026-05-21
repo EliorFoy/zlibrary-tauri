@@ -1,0 +1,77 @@
+[package]
+name = "zlibrary-tauri"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "zlibrary_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zlibrary-tauri"
+path = "src/main.rs"
+required-features = ["gui"]
+
+[[bin]]
+name = "zlibrary-cli"
+path = "src/cli.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "zlibrary-diagnose"
+path = "src/diagnose.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "zlibrary-fetch-challenge"
+path = "src/fetch_challenge.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "zlibrary-show-script"
+path = "src/show_script.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "zlibrary-test-search"
+path = "src/test_search.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "zlibrary-regtest"
+path = "src/regtest.rs"
+required-features = ["cli"]
+
+[features]
+default = []
+cli = ["dep:ratatui", "dep:crossterm", "dep:indicatif"]
+gui = ["dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-plugin-fs", "dep:tauri-plugin-shell", "dep:tauri-build"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking", "stream", "multipart"] }
+regex = "1"
+sha1 = "0.10"
+hex = "0.4"
+dirs = "5"
+rand = "0.8"
+url = "2"
+rusqlite = { version = "0.31", features = ["bundled"] }
+futures-util = "0.3"
+async-trait = "0.1"
+
+# CLI-only
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
+indicatif = { version = "0.17", optional = true }
+
+# GUI-only
+tauri = { version = "2", features = [], optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-fs = { version = "2", optional = true }
+tauri-plugin-shell = { version = "2", optional = true }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [], optional = true }

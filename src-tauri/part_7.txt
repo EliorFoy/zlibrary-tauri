@@ -1,0 +1,9 @@
+')](c+i);if((s[n1]===0xb0)&&(s[n1+0x1]===0xb)){document['cookie']=a0_0x4457('0x0')+c+i+'; path=/';document[_0x5c583a('0x1')]=_0x5c583a('0x2')+(performance['now']()-start)/0x3e8+'; path=/';window.location.reload();break;}i++;if(i%50000===0){await new Promise(r=>setTimeout(r))}};;}}</script><style>
+    html,body{margin:0;height:100%;}
+    body{margin:0;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;font-family:sans-serif;text-align:center;background:#f9f9f9}
+    .spinner{position:relative;width:60px;height:60px;border:6px solid #ccc;border-top-color:#1d72b8;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:20px}
+    svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:30px;height:30px;fill:#1d72b8;pointer-events:none;margin:-18px 0 40px 0;}
+    @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+<div class="spinner"></div>
+<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.or
