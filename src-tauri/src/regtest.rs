@@ -36,7 +36,7 @@ async fn main() {
 
     let ips = [
         ("diggui结果", {
-            zlibrary_core::client::init_resolver();
+            zlibrary_core::client::init_resolver().await;
             zlibrary_core::client::get_resolved_ip()
         }),
         ("硬编码IP", std::net::Ipv4Addr::new(176, 123, 7, 105)),

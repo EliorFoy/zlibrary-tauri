@@ -2,6 +2,7 @@
 name = "zlibrary-tauri"
 version = "0.1.0"
 edition = "2021"
+default-run = "zlibrary-tauri"
 
 [lib]
 name = "zlibrary_core"
@@ -42,6 +43,11 @@ name = "zlibrary-regtest"
 path = "src/regtest.rs"
 required-features = ["cli"]
 
+[[bin]]
+name = "zlibrary-test-register"
+path = "src/test_register.rs"
+required-features = ["cli"]
+
 [features]
 default = []
 cli = ["dep:ratatui", "dep:crossterm", "dep:indicatif"]
@@ -51,7 +57,7 @@ gui = ["dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-plugin-fs", "dep:tauri
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking", "stream", "multipart"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking", "stream", "multipart", "cookies"] }
 regex = "1"
 sha1 = "0.10"
 hex = "0.4"

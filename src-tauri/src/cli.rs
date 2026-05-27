@@ -44,7 +44,10 @@ enum AppState {
     AccountsList,
     AccountAddEmail,
     AccountAddCode,
+    AccountAddVerifyCode,
     AccountRegister,
+    AccountLoginEmail,
+    AccountLoginPassword,
 }
 
 struct App {
@@ -65,6 +68,7 @@ struct App {
     account_email: String,
     account_password: String,
     account_name: String,
+    account_code: String,
     account_pool: AccountPool,
 }
 
@@ -115,6 +119,7 @@ impl App {
             account_email: String::new(),
             account_password: String::new(),
             account_name: String::new(),
+            account_code: String::new(),
             account_pool,
         }
     }
@@ -169,7 +174,7 @@ impl App {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    zlibrary_core::client::init_resolver();
+    zlibrary_core::client::init_resolver().await;
     zlibrary_core::logger::init();
     enable_utf8_console();
     enable_raw_mode()?;
@@ -220,7 +225,7 @@ async fn run_app(
                     KeyCode::Char('2') | KeyCode::Char('a') => {
                         app.refresh_accounts();
                         app.state = AppState::AccountsList;
-                        app.status_msg = String::from("账号管理 | a 添加 | r 自动注册 | d 删除 | Esc 返回");
+                        app.status_msg = String::from("账号管理 | a 手动注册 | r 自动注册 | l 登录已有账号 | d 删除 | Esc 返回");
                     }
                     _ => {}
                 },
@@ -325,13 +330,21 @@ async fn run_app(
                         app.account_email.clear();
                         app.account_password.clear();
                         app.account_name.clear();
+                        app.account_code.clear();
                         app.status_msg =
-                            String::from("手动添加账号: 输入邮箱地址");
+                            String::from("手动注册: 输入邮箱地址");
                     }
                     KeyCode::Char('r') => {
                         app.state = AppState::AccountRegister;
                         app.status_msg =
                             String::from("自动注册中，请等待...");
+                    }
+                    KeyCode::Char('l') => {
+                        app.state = AppState::AccountLoginEmail;
+                        app.account_email.clear();
+                        app.account_password.clear();
+                        app.status_msg =
+                            String::from("登录已有账号: 输入邮箱地址");
                     }
                     KeyCode::Char('d') => {
                         if let Some(idx) = app.accounts_list_state.selected() {
@@ -377,13 +390,14 @@ async fn run_app(
                         app.status_msg = String::from("账号管理");
                     }
                     KeyCode::Enter => {
-                        if app.account_name.is_empty() && !app.account_password.is_empty() {
-                            app.account_name = format!(
-                                "User_{}",
-                                &rand::random::<u32>().to_string()[..6]
-                            );
-                            app.status_msg = String::from("输入验证码:");
-                        } else if !app.account_password.is_empty() {
+                        if !app.account_password.is_empty() {
+                            if app.account_name.is_empty() {
+                                app.account_name = format!(
+                                    "User_{}",
+                                    &rand::random::<u32>().to_string()[..6]
+                                );
+                            }
+                            app.state = AppState::AccountAddVerifyCode;
                             app.status_msg = String::from("输入验证码:");
                         }
                     }
@@ -399,13 +413,94 @@ async fn run_app(
                             app.account_name.pop();
                         } else if !app.account_password.is_empty() {
                             app.account_password.pop();
-                        } else {
-                            app.account_email.pop();
                         }
                     }
                     _ => {}
                 },
+                AppState::AccountAddVerifyCode => match key.code {
+                    KeyCode::Esc => {
+                        app.state = AppState::AccountsList;
+                        app.status_msg = String::from("账号管理");
+                    }
+                    KeyCode::Enter => {
+                        if !app.account_code.is_empty() {
+                            app.status_msg = String::from("正在提交...");
+                            let email = app.account_email.clone();
+                            let password = app.account_password.clone();
+                            let name = app.account_name.clone();
+                            let code = app.account_code.clone();
+                            match app.account_pool.manual_register(&email, &password, &name, &code).await {
+                                Ok(()) => {
+                                    app.status_msg = format!("✅ {email} 注册成功");
+                                    app.refresh_accounts();
+                                }
+                                Err(e) => {
+                                    app.error_msg = e;
+                                    app.status_msg = String::from("❌ 注册失败");
+                                }
+                            }
+                            app.state = AppState::AccountsList;
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        app.account_code.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        app.account_code.pop();
+                    }
+                    _ => {}
+                },
                 AppState::AccountRegister => {}
+                AppState::AccountLoginEmail => match key.code {
+                    KeyCode::Esc => {
+                        app.state = AppState::AccountsList;
+                        app.status_msg = String::from("账号管理");
+                    }
+                    KeyCode::Enter => {
+                        if !app.account_email.is_empty() {
+                            app.state = AppState::AccountLoginPassword;
+                            app.status_msg = String::from("输入密码:");
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        app.account_email.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        app.account_email.pop();
+                    }
+                    _ => {}
+                },
+                AppState::AccountLoginPassword => match key.code {
+                    KeyCode::Esc => {
+                        app.state = AppState::AccountsList;
+                        app.status_msg = String::from("账号管理");
+                    }
+                    KeyCode::Enter => {
+                        if !app.account_password.is_empty() {
+                            app.status_msg = String::from("正在登录...");
+                            let email = app.account_email.clone();
+                            let password = app.account_password.clone();
+                            match app.account_pool.manual_login(&email, &password).await {
+                                Ok(()) => {
+                                    app.status_msg = format!("✅ {email} 登录成功");
+                                    app.refresh_accounts();
+                                }
+                                Err(e) => {
+                                    app.error_msg = e;
+                                    app.status_msg = String::from("❌ 登录失败");
+                                }
+                            }
+                            app.state = AppState::AccountsList;
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        app.account_password.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        app.account_password.pop();
+                    }
+                    _ => {}
+                },
             }
         }
 
@@ -518,6 +613,15 @@ async fn run_app(
     }
 
     if matches!(app.state, AppState::AccountRegister) {
+        app.status_msg = String::from("预热会话...");
+        terminal.draw(|f| ui(f, app))?;
+
+        if let Err(e) = zlibrary_core::client::warmup_session().await {
+            app.error_msg = format!("会话预热失败: {e}");
+            app.state = AppState::AccountsList;
+            continue;
+        }
+
         app.status_msg = String::from("自动注册中（获取邮箱 → 发送验证码 → 等待邮件 → 验证）…");
         terminal.draw(|f| ui(f, app))?;
 
@@ -590,6 +694,9 @@ fn ui(f: &mut Frame, app: &App) {
         AppState::AccountsList => render_accounts(f, app, chunks[2]),
         AppState::AccountAddEmail => render_account_add_email(f, app, chunks[2]),
         AppState::AccountAddCode => render_account_add_code(f, app, chunks[2]),
+        AppState::AccountAddVerifyCode => render_account_add_verify_code(f, app, chunks[2]),
+        AppState::AccountLoginEmail => render_account_login_email(f, app, chunks[2]),
+        AppState::AccountLoginPassword => render_account_login_password(f, app, chunks[2]),
         AppState::AccountRegister => render_account_register(f, app, chunks[2]),
     }
 
@@ -748,10 +855,87 @@ fn render_account_add_code(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(name_block, inner[1]);
 
     let help = Paragraph::new(
-        "输入邮箱 → Enter → 输入密码 → Enter → 输入用户名 → Enter\n然后在网页上完成验证码，将验证码和邮箱一起提供给程序",
+        "输入密码后按 Enter 进入下一步\n继续输入可选用户名（按 Enter 跳过），然后再次按 Enter",
     )
     .style(Style::default().fg(Color::Gray));
     f.render_widget(help, inner[2]);
+}
+
+fn render_account_add_verify_code(f: &mut Frame, app: &App, area: Rect) {
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
+        .margin(2)
+        .split(area);
+
+    let code_display = if app.account_code.is_empty() {
+        Span::styled("输入邮件中收到的验证码", Style::default().fg(Color::DarkGray))
+    } else {
+        Span::styled(&app.account_code, Style::default().fg(Color::White))
+    };
+    let code_block =
+        Paragraph::new(Line::from(code_display)).block(Block::default().borders(Borders::ALL).title("验证码"));
+    f.render_widget(code_block, inner[0]);
+
+    let info = Paragraph::new(format!(
+        "邮箱: {}  密码: {}  用户名: {}",
+        app.account_email,
+        "*".repeat(app.account_password.len()),
+        app.account_name,
+    ))
+    .style(Style::default().fg(Color::Gray));
+    f.render_widget(info, inner[1]);
+
+    let help = Paragraph::new("输入验证码后按 Enter 提交，Esc 返回")
+        .style(Style::default().fg(Color::Gray));
+    f.render_widget(help, inner[2]);
+}
+
+fn render_account_login_email(f: &mut Frame, app: &App, area: Rect) {
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .margin(2)
+        .split(area);
+
+    let input_display = if app.account_email.is_empty() {
+        Span::styled("输入邮箱地址", Style::default().fg(Color::DarkGray))
+    } else {
+        Span::styled(&app.account_email, Style::default().fg(Color::White))
+    };
+    let input_block = Paragraph::new(Line::from(input_display))
+        .block(Block::default().borders(Borders::ALL).title("邮箱"));
+    f.render_widget(input_block, inner[0]);
+
+    let help = Paragraph::new("输入邮箱后按 Enter 继续，Esc 返回")
+        .style(Style::default().fg(Color::Gray));
+    f.render_widget(help, inner[1]);
+}
+
+fn render_account_login_password(f: &mut Frame, app: &App, area: Rect) {
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .margin(2)
+        .split(area);
+
+    let pw_mask = "*".repeat(app.account_password.len());
+    let pw_display = if app.account_password.is_empty() {
+        Span::styled("输入密码", Style::default().fg(Color::DarkGray))
+    } else {
+        Span::styled(&pw_mask, Style::default().fg(Color::White))
+    };
+    let pw_block =
+        Paragraph::new(Line::from(pw_display)).block(Block::default().borders(Borders::ALL).title("密码"));
+    f.render_widget(pw_block, inner[0]);
+
+    let info = Paragraph::new(format!("邮箱: {}", app.account_email))
+        .style(Style::default().fg(Color::Gray));
+    f.render_widget(info, inner[1]);
 }
 
 fn render_account_register(f: &mut Frame, _app: &App, area: Rect) {

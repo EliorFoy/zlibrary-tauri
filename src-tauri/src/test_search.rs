@@ -4,7 +4,7 @@ use zlibrary_core::search;
 
 #[tokio::main]
 async fn main() {
-    zlibrary_core::client::init_resolver();
+    zlibrary_core::client::init_resolver().await;
 
     let result = search::search_books("python", 1).await.expect("search");
     if result.books.is_empty() {

@@ -26,3 +26,11 @@ export interface DownloadProgress {
   message: string;
   done: boolean;
 }
+
+export interface AccountInfo {
+  id: number;
+  email: string;
+  user_id: number;
+  user_key: string;
+  usage_count: number;
+}

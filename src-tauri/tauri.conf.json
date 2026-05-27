@@ -7,15 +7,17 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build",
+    "features": ["gui"]
   },
   "app": {
-    "title": "Z-Library NoProxy",
     "windows": [
       {
         "title": "Z-Library NoProxy",
         "width": 1100,
         "height": 750,
+        "minWidth": 360,
+        "minHeight": 500,
         "resizable": true,
         "fullscreen": false
       }

@@ -28,6 +28,27 @@ pub fn session_cookie_str() -> String {
     parts.join("; ")
 }
 
+pub fn registration_cookie_str() -> String {
+    let mut parts = vec![
+        "siteLanguage=en".to_string(),
+        "refuseChangeDomain=1".to_string(),
+    ];
+    let session = SESSION_COOKIES.read().unwrap();
+    for (name, value) in session.iter() {
+        parts.push(format!("{name}={value}"));
+    }
+    parts.join("; ")
+}
+
+pub fn verify_cookie_str() -> String {
+    let session = SESSION_COOKIES.read().unwrap();
+    if let Some(bsrv) = session.get("bsrv") {
+        format!("bsrv={bsrv}")
+    } else {
+        registration_cookie_str()
+    }
+}
+
 fn update_session_from_challenge(cookie_str: &str, set_cookies: &[String]) {
     let mut session = SESSION_COOKIES.write().unwrap();
     for part in cookie_str.split(';') {
@@ -67,6 +88,12 @@ pub fn make_url(path: &str) -> String {
 
 pub fn rewrite_url(url: &str) -> String {
     url.replace(ORIGIN_DOMAIN, URL_DOMAIN)
+}
+
+pub fn clear_session_cookies() {
+    if let Ok(mut s) = SESSION_COOKIES.write() {
+        s.clear();
+    }
 }
 
 pub async fn warmup_session() -> Result<(), String> {
@@ -216,8 +243,59 @@ fn save_ip_cache(ip: Ipv4Addr) {
     let _ = fs::write(&path, ip.to_string());
 }
 
-fn resolve_from_diggui() -> Option<Ipv4Addr> {
-    let client = reqwest::blocking::Client::builder()
+fn resolve_system_dns(domain: &str) -> Option<Ipv4Addr> {
+    format!("{domain}:443")
+        .to_socket_addrs()
+        .ok()?
+        .find_map(|a| match a.ip() {
+            IpAddr::V4(v4) => Some(v4),
+            _ => None,
+        })
+}
+
+pub async fn init_resolver() {
+    refresh_ip_async().await;
+    let ip = get_resolved_ip();
+    log_info!("[init] z-library.sk -> {ip}");
+}
+
+pub fn get_resolved_ip() -> Ipv4Addr {
+    CACHED_IP
+        .read()
+        .ok()
+        .and_then(|ip| {
+            if ip.is_unspecified() {
+                None
+            } else {
+                Some(*ip)
+            }
+        })
+        .unwrap_or_else(|| {
+            let ip = load_cached_ip()
+                .or_else(|| resolve_system_dns(ORIGIN_DOMAIN))
+                .unwrap_or(Ipv4Addr::new(176, 123, 7, 105));
+            save_ip_cache(ip);
+            if let Ok(mut c) = CACHED_IP.write() {
+                *c = ip;
+            }
+            ip
+        })
+}
+
+pub async fn refresh_ip_async() {
+    let new_ip = resolve_from_diggui_async()
+        .await
+        .or_else(|| resolve_system_dns(ORIGIN_DOMAIN))
+        .unwrap_or(Ipv4Addr::new(176, 123, 7, 105));
+    save_ip_cache(new_ip);
+    if let Ok(mut c) = CACHED_IP.write() {
+        *c = new_ip;
+    }
+    log_info!("[resolver] {ORIGIN_DOMAIN} -> {new_ip}");
+}
+
+async fn resolve_from_diggui_async() -> Option<Ipv4Addr> {
+    let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(15))
         .build()
@@ -261,9 +339,10 @@ fn resolve_from_diggui() -> Option<Ipv4Addr> {
         )
         .form(&form)
         .send()
+        .await
         .ok()?;
 
-    let body = resp.text().ok()?;
+    let body = resp.text().await.ok()?;
 
     let re = Regex::new(&format!(
         r#"{}\.</a>\s+<span[^>]*>\d+</span>\s+<span[^>]*>IN</span>\s+<a[^>]*>A</a>\s+<a[^>]*>([0-9]{{1,3}}\.[0-9]{{1,3}}\.[0-9]{{1,3}}\.[0-9]{{1,3}})</a>"#,
@@ -277,48 +356,8 @@ fn resolve_from_diggui() -> Option<Ipv4Addr> {
     Some(ip)
 }
 
-fn resolve_system_dns(domain: &str) -> Option<Ipv4Addr> {
-    format!("{domain}:443")
-        .to_socket_addrs()
-        .ok()?
-        .find_map(|a| match a.ip() {
-            IpAddr::V4(v4) => Some(v4),
-            _ => None,
-        })
-}
-
-pub fn init_resolver() {
-    let ip = get_resolved_ip();
-    log_info!("[init] z-library.sk -> {ip}");
-}
-
-pub fn get_resolved_ip() -> Ipv4Addr {
-    CACHED_IP
-        .read()
-        .ok()
-        .and_then(|ip| {
-            if ip.is_unspecified() {
-                None
-            } else {
-                Some(*ip)
-            }
-        })
-        .unwrap_or_else(|| {
-            let ip = load_cached_ip()
-                .or_else(|| resolve_from_diggui())
-                .or_else(|| resolve_system_dns(ORIGIN_DOMAIN))
-                .unwrap_or(Ipv4Addr::new(176, 123, 7, 105));
-            save_ip_cache(ip);
-            if let Ok(mut c) = CACHED_IP.write() {
-                *c = ip;
-            }
-            ip
-        })
-}
-
 pub fn force_refresh_ip() {
-    let new_ip = resolve_from_diggui()
-        .or_else(|| resolve_system_dns(ORIGIN_DOMAIN))
+    let new_ip = resolve_system_dns(ORIGIN_DOMAIN)
         .unwrap_or(Ipv4Addr::new(176, 123, 7, 105));
     log_info!("[resolver] 刷新 IP: {ORIGIN_DOMAIN} -> {new_ip}");
     save_ip_cache(new_ip);

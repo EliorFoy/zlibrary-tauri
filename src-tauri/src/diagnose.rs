@@ -48,7 +48,7 @@ fn build_test_client(ip: std::net::Ipv4Addr) -> reqwest::Client {
 async fn main() {
     println!("=== Z-Library 连接诊断 ===\n");
 
-    zlibrary_core::client::init_resolver();
+    zlibrary_core::client::init_resolver().await;
     let resolved = zlibrary_core::client::get_resolved_ip();
     let domain = zlibrary_core::client::ORIGIN_DOMAIN;
     println!("[diggui] {domain} -> {resolved}\n");

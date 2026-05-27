@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, reactive } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import BookCard from "../components/BookCard.vue";
+import { addDownload } from "../stores/downloadStore";
 import type { BookInfo, SearchResult } from "../types";
 
 const emit = defineEmits<{
-  "start-download": [book: BookInfo];
+  "start-download": [];
 }>();
 
 const query = defineModel<string>("query", { default: "" });
@@ -15,12 +16,26 @@ const books = ref<BookInfo[]>([]);
 const currentPage = ref(1);
 const totalResults = ref(0);
 const error = ref("");
+const downloadingId = ref<string | null>(null);
+
+interface PageCache {
+  [page: number]: BookInfo[];
+}
+const pageCache = reactive<PageCache>({});
 
 async function doSearch(page: number = 1) {
   if (!query.value.trim()) return;
 
   loading.value = true;
   error.value = "";
+
+  if (pageCache[page]) {
+    books.value = pageCache[page];
+    currentPage.value = page;
+    loading.value = false;
+    return;
+  }
+
   currentPage.value = page;
 
   try {
@@ -30,6 +45,7 @@ async function doSearch(page: number = 1) {
     });
     books.value = result.books;
     totalResults.value = result.total;
+    pageCache[page] = result.books;
   } catch (e: any) {
     error.value = typeof e === "string" ? e : e?.message || "搜索失败";
     books.value = [];
@@ -44,6 +60,13 @@ function onSearch() {
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === "Enter") onSearch();
+}
+
+async function onDownload(book: BookInfo) {
+  downloadingId.value = book.id;
+  await addDownload(book);
+  downloadingId.value = null;
+  emit("start-download");
 }
 </script>
 
@@ -81,7 +104,8 @@ function onKeydown(e: KeyboardEvent) {
           v-for="book in books"
           :key="book.id"
           :book="book"
-          @download="emit('start-download', $event)"
+          :disabled="downloadingId === book.id"
+          @download="onDownload"
         />
       </div>
       <div v-if="totalResults > books.length" class="pagination">
@@ -114,16 +138,16 @@ function onKeydown(e: KeyboardEvent) {
 .search-hero {
   text-align: center;
   padding: 48px 24px 36px;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #7c3aed15 100%);
+  background: var(--bg-hero);
   border-radius: 24px;
   margin-bottom: 32px;
-  border: 1px solid #7c3aed20;
+  border: 1px solid var(--badge-border);
 }
 
 .search-title {
   font-size: 2rem;
   font-weight: 800;
-  background: linear-gradient(135deg, #7c4dff, #e94560);
+  background: linear-gradient(135deg, var(--accent-secondary), var(--accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -147,15 +171,15 @@ function onKeydown(e: KeyboardEvent) {
   flex: 1;
   display: flex;
   align-items: center;
-  background: #0a0a1a;
-  border: 2px solid #2a2a4a;
+  background: var(--bg-input);
+  border: 2px solid var(--border-input);
   border-radius: 16px;
   padding: 0 16px;
   transition: border-color 0.3s;
 }
 
 .search-input-wrap:focus-within {
-  border-color: #7c4dff;
+  border-color: var(--accent-secondary);
 }
 
 .search-icon {
@@ -176,7 +200,7 @@ function onKeydown(e: KeyboardEvent) {
 
 .search-btn {
   padding: 14px 32px;
-  background: linear-gradient(135deg, #7c4dff, #e94560);
+  background: linear-gradient(135deg, var(--accent-secondary), var(--accent));
   border: none;
   border-radius: 16px;
   color: white;
@@ -192,7 +216,7 @@ function onKeydown(e: KeyboardEvent) {
 
 .search-btn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(124, 77, 255, 0.35);
+  box-shadow: var(--shadow-accent);
 }
 
 .search-btn:disabled {
@@ -276,8 +300,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .page-btn:hover:not(:disabled) {
-  border-color: #7c4dff;
-  background: #7c4dff15;
+  border-color: var(--accent-secondary);
+  background: var(--badge-bg);
 }
 
 .page-btn:disabled {
@@ -301,5 +325,24 @@ function onKeydown(e: KeyboardEvent) {
   display: block;
   margin-bottom: 16px;
   opacity: 0.4;
+}
+
+@media (max-width: 768px) {
+  .search-hero {
+    padding: 32px 16px 24px;
+    border-radius: 16px;
+  }
+
+  .search-title {
+    font-size: 1.5rem;
+  }
+
+  .search-box {
+    flex-direction: column;
+  }
+
+  .book-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

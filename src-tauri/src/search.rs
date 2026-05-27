@@ -8,8 +8,6 @@ pub async fn search_books(query: &str, page: u32) -> Result<SearchResult, String
     let resp = client::get_with_challenge(&url).await?;
     let html = resp.text().await.map_err(|e| format!("读取失败: {e}"))?;
 
-    let _ = std::fs::write("debug_response.html", &html);
-
     let books = parse_books(&html);
     let total = books.len() as u32;
 
