@@ -225,10 +225,6 @@ async fn check_download_available(
     Ok(pool.has_any_available_account())
 }
 
-fn main() {
-    run();
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pool = AccountPool::new().expect("初始化账号数据库失败");
