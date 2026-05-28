@@ -24,6 +24,19 @@ async function openFolder(path: string) {
     }
   }
 }
+
+async function openFile(path: string) {
+  if (path) {
+    try {
+      await invoke("open_file", { path });
+    } catch (e: any) {
+      const message = typeof e === "string" ? e : e?.message || "无法打开文件";
+      window.alert(message);
+    }
+  }
+}
+
+const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 </script>
 
 <template>
@@ -109,11 +122,17 @@ async function openFolder(path: string) {
               <span class="done-badge">✅ 已完成</span>
               <span class="progress-pct done-pct">100%</span>
             </div>
-            <div v-if="task.savePath" class="save-path-row">
-              <span class="path-label">保存路径：</span>
-              <span class="path-value">{{ task.savePath }}</span>
-              <button class="btn-folder" @click="openFolder(task.savePath)">
+            <div class="save-path-row">
+              <template v-if="task.savePath">
+                <span class="path-label">保存路径：</span>
+                <span class="path-value">{{ task.savePath }}</span>
+              </template>
+              <span v-else class="path-label">下载完成</span>
+              <button v-if="task.savePath && !isMobile" class="btn-folder" @click="openFolder(task.savePath)" title="打开文件所在目录">
                 📂
+              </button>
+              <button v-if="task.savePath" class="btn-folder" @click="openFile(task.savePath)" title="打开文件">
+                📄
               </button>
             </div>
           </div>

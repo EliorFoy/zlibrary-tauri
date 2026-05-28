@@ -15,6 +15,7 @@ const loading = ref(false);
 const books = ref<BookInfo[]>([]);
 const currentPage = ref(1);
 const totalResults = ref(0);
+const totalPages = ref(0);
 const error = ref("");
 const downloadingId = ref<string | null>(null);
 const showNoAccountWarning = ref(false);
@@ -23,9 +24,15 @@ interface PageCache {
   [page: number]: BookInfo[];
 }
 const pageCache = reactive<PageCache>({});
+let cachedQuery = "";
 
 async function doSearch(page: number = 1) {
   if (!query.value.trim()) return;
+
+  if (query.value.trim() !== cachedQuery) {
+    Object.keys(pageCache).forEach((k) => delete pageCache[Number(k)]);
+    cachedQuery = query.value.trim();
+  }
 
   loading.value = true;
   error.value = "";
@@ -46,6 +53,7 @@ async function doSearch(page: number = 1) {
     });
     books.value = result.books;
     totalResults.value = result.total;
+    totalPages.value = result.total_pages;
     pageCache[page] = result.books;
   } catch (e: any) {
     error.value = typeof e === "string" ? e : e?.message || "搜索失败";
@@ -115,11 +123,16 @@ async function onDownload(book: BookInfo) {
       <span>所有账号额度已用尽，下载将使用游客模式（IP 限制）</span>
     </div>
 
-    <div v-if="books.length > 0" class="results-section">
+    <div v-if="books.length > 0 || loading" class="results-section">
       <div class="results-header">
-        <span>找到 {{ totalResults }} 个结果</span>
+        <span v-if="totalResults > 0">找到 {{ totalResults }} 个结果</span>
+        <span v-if="currentPage > 1"> · 第 {{ currentPage }} 页</span>
       </div>
-      <div class="book-grid">
+      <div v-if="loading" class="loading-overlay">
+        <div class="spinner-lg"></div>
+        <span>加载中…</span>
+      </div>
+      <div class="book-grid" :class="{ dimmed: loading }">
         <BookCard
           v-for="book in books"
           :key="book.id"
@@ -128,16 +141,16 @@ async function onDownload(book: BookInfo) {
           @download="onDownload"
         />
       </div>
-      <div v-if="totalResults > books.length" class="pagination">
+      <div v-if="totalResults > 25 || currentPage > 1" class="pagination">
         <button
           class="page-btn"
-          :disabled="currentPage <= 1"
+          :disabled="currentPage <= 1 || loading"
           @click="doSearch(currentPage - 1)"
         >
           上一页
         </button>
-        <span class="page-info">第 {{ currentPage }} 页</span>
-        <button class="page-btn" @click="doSearch(currentPage + 1)">
+        <span class="page-info">第 {{ currentPage }} / {{ totalPages }} 页</span>
+        <button class="page-btn" :disabled="currentPage >= totalPages || loading" @click="doSearch(currentPage + 1)">
           下一页
         </button>
       </div>
@@ -315,6 +328,31 @@ async function onDownload(book: BookInfo) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 16px;
+}
+
+.loading-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 0;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.spinner-lg {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(128, 128, 128, 0.2);
+  border-top-color: var(--accent-secondary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.dimmed {
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity 0.2s;
 }
 
 .pagination {

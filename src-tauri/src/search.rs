@@ -5,13 +5,26 @@ pub async fn search_books(query: &str, page: u32) -> Result<SearchResult, String
     let encoded = urlencoding(query);
     let url = client::make_url(&format!("/s/{}?page={}", encoded, page));
 
-    let resp = client::get_with_challenge(&url).await?;
+    let mut resp = client::get_with_challenge(&url).await?;
     let html = resp.text().await.map_err(|e| format!("读取失败: {e}"))?;
 
     let books = parse_books(&html);
-    let total = books.len() as u32;
+    let total = parse_total_results(&html).unwrap_or(books.len() as u32);
+    let total_pages = parse_total_pages(&html).unwrap_or(1).max(1);
 
-    Ok(SearchResult { books, total, page })
+    Ok(SearchResult { books, total, page, total_pages })
+}
+
+fn parse_total_results(html: &str) -> Option<u32> {
+    let re = regex::Regex::new(r#"data-type="book"[^>]*>[^<]*Books[^(]*\(([0-9]+)\)"#).ok()?;
+    let cap = re.captures(html)?;
+    cap[1].parse().ok()
+}
+
+fn parse_total_pages(html: &str) -> Option<u32> {
+    let re = regex::Regex::new(r#"pagesTotal:\s*(\d+)"#).ok()?;
+    let cap = re.captures(html)?;
+    cap[1].parse().ok()
 }
 
 fn parse_books(html: &str) -> Vec<BookInfo> {

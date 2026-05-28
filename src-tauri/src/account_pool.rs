@@ -993,7 +993,7 @@ impl AccountPool {
         headers.insert(reqwest::header::ACCEPT_LANGUAGE, reqwest::header::HeaderValue::from_static("zh-CN,zh;q=0.9,en;q=0.8"));
         headers.insert(reqwest::header::COOKIE, reqwest::header::HeaderValue::from_str(&cookie).map_err(|e| e.to_string())?);
 
-        let resp = client::get_with_challenge_and_account(&url, Some((&uid_str, &account.user_key))).await?;
+        let mut resp = client::get_with_challenge_and_account(&url, Some((&uid_str, &account.user_key))).await?;
 
         let html = resp.text().await.map_err(|e| format!("读取页面失败: {e}"))?;
 

@@ -282,7 +282,7 @@ async fn download_chunk(
 }
 
 async fn follow_redirect(url: &str, account: Option<(&str, &str)>) -> Result<String, String> {
-    let resp = client::get_with_challenge_and_account(url, account).await?;
+    let mut resp = client::get_with_challenge_and_account(url, account).await?;
     let status = resp.status();
 
     if status.is_redirection() {

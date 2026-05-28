@@ -40,6 +40,10 @@ pub fn ip_cache_file() -> Result<PathBuf, String> {
     Ok(app_cache_dir()?.join("ip_cache"))
 }
 
+pub fn download_history_file() -> Result<PathBuf, String> {
+    Ok(app_cache_dir()?.join("download_history.json"))
+}
+
 pub fn log_file() -> Result<PathBuf, String> {
     Ok(app_log_dir()?.join("zlibrary.log"))
 }

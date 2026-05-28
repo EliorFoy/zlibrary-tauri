@@ -23,4 +23,5 @@ pub struct SearchResult {
     pub books: Vec<BookInfo>,
     pub total: u32,
     pub page: u32,
+    pub total_pages: u32,
 }

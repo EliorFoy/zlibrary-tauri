@@ -157,6 +157,47 @@ async fn send_registration_code(
 
 #[cfg(feature = "gui")]
 #[tauri::command]
+async fn open_file(path: String) -> Result<(), String> {
+    let target = std::path::PathBuf::from(&path);
+    if !target.exists() {
+        return Err(format!("文件不存在: {}", target.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .spawn()
+            .map_err(|e| format!("打开文件失败: {e}"))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("打开文件失败: {e}"))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("打开文件失败: {e}"))?;
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        let _ = path;
+        return Err("Android 暂不支持打开文件".to_string());
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "gui")]
+#[tauri::command]
 async fn open_file_location(path: String) -> Result<(), String> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
@@ -166,25 +207,25 @@ async fn open_file_location(path: String) -> Result<(), String> {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        let target = std::path::PathBuf::from(path);
-        if !target.exists() {
-            return Err(format!("路径不存在: {}", target.display()));
-        }
+        let target = std::path::PathBuf::from(&path);
+        log_info!("[open_file_location] path={path}, exists={}", target.exists());
 
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
         let dir = if target.is_dir() {
             target.clone()
         } else {
-            target
-                .parent()
-                .ok_or_else(|| format!("无法获取父目录: {}", target.display()))?
-                .to_path_buf()
+            match target.parent() {
+                Some(p) => p.to_path_buf(),
+                None => return Err(format!("无法获取父目录: {path}")),
+            }
         };
+
+        log_info!("[open_file_location] opening dir={}", dir.display());
 
         #[cfg(target_os = "windows")]
         {
+            log_info!("[open_file_location] opening: {}", dir.display());
             std::process::Command::new("explorer")
-                .arg(format!("/select,{}", target.display()))
+                .arg(dir.as_os_str())
                 .spawn()
                 .map_err(|e| format!("打开资源管理器失败: {e}"))?;
             return Ok(());
@@ -323,6 +364,27 @@ async fn check_download_available(
 }
 
 #[cfg(feature = "gui")]
+#[tauri::command]
+async fn load_download_history() -> Result<String, String> {
+    let path = paths::download_history_file()?;
+    if path.exists() {
+        std::fs::read_to_string(&path).map_err(|e| format!("读取下载记录失败: {e}"))
+    } else {
+        Ok("[]".to_string())
+    }
+}
+
+#[cfg(feature = "gui")]
+#[tauri::command]
+async fn save_download_history(data: String) -> Result<(), String> {
+    let path = paths::download_history_file()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+    }
+    std::fs::write(&path, &data).map_err(|e| format!("保存下载记录失败: {e}"))
+}
+
+#[cfg(feature = "gui")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -351,12 +413,15 @@ pub fn run() {
             send_registration_code,
             list_accounts,
             delete_account,
+            open_file,
             open_file_location,
             refresh_account_quota,
             refresh_all_quotas,
             set_active_account,
             get_active_account,
             check_download_available,
+            load_download_history,
+            save_download_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

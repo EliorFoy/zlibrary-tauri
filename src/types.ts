@@ -19,6 +19,7 @@ export interface SearchResult {
   books: BookInfo[];
   total: number;
   page: number;
+  total_pages: number;
 }
 
 export interface DownloadProgress {

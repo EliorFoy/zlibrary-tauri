@@ -16,10 +16,42 @@ export interface DownloadTask {
 
 const tasks = reactive<DownloadTask[]>([]);
 let initialized = false;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function loadPersisted() {
+  try {
+    const raw: string = await invoke("load_download_history");
+    if (raw) {
+      const saved: DownloadTask[] = JSON.parse(raw);
+      for (const t of saved) {
+        if (t.status === "done" || t.status === "error") {
+          tasks.push(t);
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function persist() {
+  // Debounce to avoid excessive writes
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(async () => {
+    try {
+      const toSave = tasks.filter((t) => t.status === "done" || t.status === "error");
+      await invoke("save_download_history", { data: JSON.stringify(toSave) });
+    } catch {
+      // ignore
+    }
+  }, 500);
+}
 
 function init() {
   if (initialized) return;
   initialized = true;
+
+  loadPersisted();
 
   listen<{
     type: string;
@@ -73,9 +105,11 @@ export async function addDownload(book: BookInfo): Promise<void> {
     task.savePath = result;
     task.status = "done";
     task.progress = 100;
+    persist();
   } catch (e: any) {
     task.status = "error";
     task.errorMsg = typeof e === "string" ? e : e?.message || "未知错误";
+    persist();
   }
 }
 
