@@ -323,11 +323,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare APK artifacts
+        if: always()
+        run: |
+          mkdir -p android-artifacts
+          find src-tauri/gen/android/app/build/outputs -name "*.apk" -o -name "*.aab" | while read file; do
+            cp "$file" android-artifacts/
+          done
+          ls -lh android-artifacts/
+
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Z-Library-NoProxy-Android
-          path: |
-            src-tauri/gen/android/app/build/outputs/apk/
-            src-tauri/gen/android/app/build/outputs/bundle/
+          path: android-artifacts/
