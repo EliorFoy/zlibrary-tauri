@@ -34,3 +34,8 @@ export interface AccountInfo {
   user_key: string;
   usage_count: number;
 }
+
+export interface ActiveAccountState {
+  account: AccountInfo | null;
+  has_available: boolean;
+}

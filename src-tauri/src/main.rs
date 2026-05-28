@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 
 use zlibrary_core::account_pool::{AccountInfo, AccountPool};
 use zlibrary_core::download::{self, ProgressCallback};
+use zlibrary_core::log_info;
 use zlibrary_core::model::{BookInfo, SearchResult};
 use zlibrary_core::search;
 
@@ -50,13 +51,49 @@ async fn search_books(query: String, page: u32) -> Result<SearchResult, String> 
 }
 
 #[tauri::command]
-async fn download_book(book: BookInfo, download_id: String, app_handle: tauri::AppHandle) -> Result<String, String> {
+async fn download_book(
+    book: BookInfo,
+    download_id: String,
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<AccountPool>>,
+) -> Result<String, String> {
     let progress = Arc::new(DownloadProgress {
         app: app_handle,
         last_pct: std::sync::atomic::AtomicU32::new(0),
         download_id,
     });
-    let path = download::download_book_with_progress(&book, progress).await?;
+
+    // 获取活跃账号或最佳可用账号
+    let account_opt = {
+        let pool = state.lock().await;
+        pool.get_active_account()
+            .or_else(|| pool.get_best_available_account())
+    };
+
+    let path = if let Some(account) = &account_opt {
+        log_info!("[download] 使用账号 {} (剩余额度 {}) 下载", account.email, account.usage_count);
+        
+        let uid_str = account.user_id.to_string();
+        let result = download::download_book_with_progress(
+            &book,
+            progress,
+            Some((uid_str.as_str(), account.user_key.as_str())),
+        ).await;
+
+        // 下载成功后扣减额度
+        if result.is_ok() {
+            let pool = state.lock().await;
+            if let Err(e) = pool.decrement_usage(account.id) {
+                log_info!("[download] 扣减额度失败: {}", e);
+            }
+        }
+
+        result?
+    } else {
+        log_info!("[download] 无可用账号，以游客模式下载");
+        download::download_book_with_progress(&book, progress, None).await?
+    };
+
     Ok(path.to_string_lossy().to_string())
 }
 
@@ -146,6 +183,48 @@ async fn delete_account(
     pool.delete_account(id)
 }
 
+#[tauri::command]
+async fn refresh_account_quota(
+    id: i64,
+    state: tauri::State<'_, Mutex<AccountPool>>,
+) -> Result<i32, String> {
+    let pool = state.lock().await;
+    pool.refresh_account_quota(id).await
+}
+
+#[tauri::command]
+async fn refresh_all_quotas(
+    state: tauri::State<'_, Mutex<AccountPool>>,
+) -> Result<Vec<(i64, String, i32)>, String> {
+    let pool = state.lock().await;
+    pool.refresh_all_quotas().await
+}
+
+#[tauri::command]
+async fn set_active_account(
+    id: i64,
+    state: tauri::State<'_, Mutex<AccountPool>>,
+) -> Result<(), String> {
+    let pool = state.lock().await;
+    pool.set_active_account(id)
+}
+
+#[tauri::command]
+async fn get_active_account(
+    state: tauri::State<'_, Mutex<AccountPool>>,
+) -> Result<Option<AccountInfo>, String> {
+    let pool = state.lock().await;
+    Ok(pool.get_active_account())
+}
+
+#[tauri::command]
+async fn check_download_available(
+    state: tauri::State<'_, Mutex<AccountPool>>,
+) -> Result<bool, String> {
+    let pool = state.lock().await;
+    Ok(pool.has_any_available_account())
+}
+
 fn main() {
     run();
 }
@@ -168,6 +247,11 @@ pub fn run() {
             list_accounts,
             delete_account,
             open_file_location,
+            refresh_account_quota,
+            refresh_all_quotas,
+            set_active_account,
+            get_active_account,
+            check_download_available,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -17,8 +17,19 @@ static SESSION_COOKIES: std::sync::LazyLock<RwLock<HashMap<String, String>>> =
 
 pub fn session_cookie_str() -> String {
     let mut parts = vec![
-        "remix_userkey=a097500143c397d1c09c8c4c459bb142".to_string(),
-        "remix_userid=35246529".to_string(),
+        "selectedSiteMode=books".to_string(),
+    ];
+    let session = SESSION_COOKIES.read().unwrap();
+    for (name, value) in session.iter() {
+        parts.push(format!("{name}={value}"));
+    }
+    parts.join("; ")
+}
+
+pub fn session_cookie_str_with(user_id: &str, user_key: &str) -> String {
+    let mut parts = vec![
+        format!("remix_userid={}", user_id),
+        format!("remix_userkey={}", user_key),
         "selectedSiteMode=books".to_string(),
     ];
     let session = SESSION_COOKIES.read().unwrap();
@@ -109,7 +120,15 @@ pub async fn warmup_session() -> Result<(), String> {
 }
 
 pub async fn get_with_challenge(url: &str) -> Result<reqwest::Response, String> {
-    let resp = send_request_with_retry(url).await?;
+    get_with_challenge_and_account(url, None).await
+}
+
+pub async fn get_with_challenge_and_account(url: &str, account: Option<(&str, &str)>) -> Result<reqwest::Response, String> {
+    let resp = if let Some((uid, ukey)) = account {
+        send_request_with_retry_and_account(url, uid, ukey).await?
+    } else {
+        send_request_with_retry(url).await?
+    };
     let status = resp.status();
     if status.as_u16() != 503 {
         return Ok(resp);
@@ -155,6 +174,12 @@ pub async fn get_with_challenge(url: &str) -> Result<reqwest::Response, String> 
 
     update_session_from_challenge(&cookie, &set_cookie);
 
+    let final_cookie = if let Some((uid, ukey)) = account {
+        format!("{cookie}; remix_userid={uid}; remix_userkey={ukey}")
+    } else {
+        cookie.clone()
+    };
+
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         reqwest::header::HOST,
@@ -168,7 +193,7 @@ pub async fn get_with_challenge(url: &str) -> Result<reqwest::Response, String> 
     );
     headers.insert(
         reqwest::header::COOKIE,
-        reqwest::header::HeaderValue::from_str(&cookie).map_err(|e| e.to_string())?,
+        reqwest::header::HeaderValue::from_str(&final_cookie).map_err(|e| e.to_string())?,
     );
     headers.insert(
         "sec-ch-ua",
@@ -205,6 +230,30 @@ async fn send_request_with_retry(url: &str) -> Result<reqwest::Response, String>
             log_info!("[retry] 请求失败: {e}，刷新IP重试...");
             force_refresh_ip();
             let cookie = session_cookie_str();
+            CLIENT
+                .get(url)
+                .header(reqwest::header::COOKIE, &cookie)
+                .send()
+                .await
+                .map_err(|e2| {
+                    let ip = get_resolved_ip();
+                    format!(
+                        "请求失败 (IP={ip}, SNI={URL_DOMAIN}, Host={ORIGIN_DOMAIN}): {e2}"
+                    )
+                })
+        }
+    }
+}
+
+async fn send_request_with_retry_and_account(url: &str, user_id: &str, user_key: &str) -> Result<reqwest::Response, String> {
+    let cookie = session_cookie_str_with(user_id, user_key);
+    let req = CLIENT.get(url).header(reqwest::header::COOKIE, &cookie);
+    match req.send().await {
+        Ok(resp) => Ok(resp),
+        Err(e) => {
+            log_info!("[retry] 请求失败: {e}，刷新IP重试...");
+            force_refresh_ip();
+            let cookie = session_cookie_str_with(user_id, user_key);
             CLIENT
                 .get(url)
                 .header(reqwest::header::COOKIE, &cookie)

@@ -17,6 +17,7 @@ const currentPage = ref(1);
 const totalResults = ref(0);
 const error = ref("");
 const downloadingId = ref<string | null>(null);
+const showNoAccountWarning = ref(false);
 
 interface PageCache {
   [page: number]: BookInfo[];
@@ -63,6 +64,19 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 async function onDownload(book: BookInfo) {
+  // 检查是否有可用账号
+  try {
+    const hasAvailable = await invoke<boolean>("check_download_available");
+    if (!hasAvailable) {
+      showNoAccountWarning.value = true;
+      setTimeout(() => {
+        showNoAccountWarning.value = false;
+      }, 5000);
+    }
+  } catch (e) {
+    console.error("检查账号失败:", e);
+  }
+
   downloadingId.value = book.id;
   await addDownload(book);
   downloadingId.value = null;
@@ -94,6 +108,12 @@ async function onDownload(book: BookInfo) {
     </div>
 
     <div v-if="error" class="error-msg">{{ error }}</div>
+
+    <!-- 无可用账号警告 -->
+    <div v-if="showNoAccountWarning" class="warning-banner">
+      <span class="warning-icon">⚠️</span>
+      <span>所有账号额度已用尽，下载将使用游客模式（IP 限制）</span>
+    </div>
 
     <div v-if="books.length > 0" class="results-section">
       <div class="results-header">
@@ -247,6 +267,24 @@ async function onDownload(book: BookInfo) {
   border-radius: 12px;
   margin-bottom: 20px;
   text-align: center;
+}
+
+.warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 152, 0, 0.1);
+  border: 1px solid rgba(255, 152, 0, 0.3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  color: #ff9800;
+  animation: fadeIn 0.3s ease;
+}
+
+.warning-icon {
+  font-size: 1.1rem;
 }
 
 .results-section {

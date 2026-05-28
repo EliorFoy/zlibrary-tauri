@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import type { BookInfo } from "../types";
 
-const props = defineProps<{ book: BookInfo; disabled?: boolean }>();
+defineProps<{ book: BookInfo; disabled?: boolean }>();
 const emit = defineEmits<{ download: [book: BookInfo] }>();
 const imgFailed = ref(false);
 

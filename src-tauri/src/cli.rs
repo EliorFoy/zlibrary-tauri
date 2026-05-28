@@ -587,7 +587,7 @@ async fn run_app(
         });
         let tp_clone = tp.clone();
         let handle = tokio::spawn(async move {
-            zlibrary_core::download::download_book_with_progress(&book, tp_clone).await
+            zlibrary_core::download::download_book_with_progress(&book, tp_clone, None).await
         });
         while !handle.is_finished() {
             let pct = tp.pct.load(std::sync::atomic::Ordering::SeqCst);

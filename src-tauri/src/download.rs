@@ -67,12 +67,13 @@ static DOWNLOAD_CLIENT: std::sync::LazyLock<reqwest::Client> =
     });
 
 pub async fn download_book(book: &BookInfo) -> Result<PathBuf, String> {
-    download_book_with_progress(book, Arc::new(NoopProgress)).await
+    download_book_with_progress(book, Arc::new(NoopProgress), None).await
 }
 
 pub async fn download_book_with_progress(
     book: &BookInfo,
     progress: Arc<dyn ProgressCallback>,
+    account: Option<(&str, &str)>,  // Some((user_id, user_key))
 ) -> Result<PathBuf, String> {
     let url = &book.download_url;
     if url.is_empty() {
@@ -84,7 +85,7 @@ pub async fn download_book_with_progress(
     let download_dir = dirs::download_dir().ok_or("无法获取下载目录")?;
     let save_path = download_dir.join(&filename);
 
-    let redirect_url = follow_redirect(&rewritten).await?;
+    let redirect_url = follow_redirect(&rewritten, account).await?;
 
     fetch_with_range(&redirect_url, &save_path, progress).await?;
 
@@ -277,8 +278,8 @@ async fn download_chunk(
     Ok(len)
 }
 
-async fn follow_redirect(url: &str) -> Result<String, String> {
-    let resp = client::get_with_challenge(url).await?;
+async fn follow_redirect(url: &str, account: Option<(&str, &str)>) -> Result<String, String> {
+    let resp = client::get_with_challenge_and_account(url, account).await?;
     let status = resp.status();
 
     if status.is_redirection() {

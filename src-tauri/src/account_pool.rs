@@ -848,6 +848,181 @@ impl AccountPool {
             .map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    pub fn set_active_account(&self, id: i64) -> Result<(), String> {
+        self.db.lock().unwrap()
+            .execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('active_account_id', ?1)",
+                rusqlite::params![id.to_string()],
+            )
+            .map_err(|e| format!("设置活跃账号失败: {e}"))?;
+        Ok(())
+    }
+
+    pub fn get_active_account_id(&self) -> Option<i64> {
+        let db = self.db.lock().unwrap();
+        // Ensure settings table exists
+        db.execute_batch(
+            "CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )"
+        ).ok();
+        
+        db.query_row(
+            "SELECT value FROM settings WHERE key = 'active_account_id'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+    }
+
+    pub fn get_active_account(&self) -> Option<AccountInfo> {
+        let active_id = self.get_active_account_id()?;
+        let db = self.db.lock().unwrap();
+        db.query_row(
+            "SELECT id, email, user_id, user_key, usage_count FROM accounts WHERE id = ?1",
+            rusqlite::params![active_id],
+            |row| Ok(AccountInfo {
+                id: row.get(0)?,
+                email: row.get(1)?,
+                user_id: row.get(2)?,
+                user_key: row.get(3)?,
+                usage_count: row.get(4)?,
+            }),
+        )
+        .ok()
+    }
+
+    pub fn decrement_usage(&self, id: i64) -> Result<(), String> {
+        self.db.lock().unwrap()
+            .execute(
+                "UPDATE accounts SET usage_count = MAX(usage_count - 1, 0) WHERE id = ?1",
+                rusqlite::params![id],
+            )
+            .map_err(|e| format!("扣减额度失败: {e}"))?;
+        Ok(())
+    }
+
+    pub fn has_any_available_account(&self) -> bool {
+        let db = self.db.lock().unwrap();
+        db.query_row(
+            "SELECT COUNT(*) FROM accounts WHERE usage_count > 0",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false)
+    }
+
+    pub fn get_best_available_account(&self) -> Option<AccountInfo> {
+        let db = self.db.lock().unwrap();
+        let mut stmt = db
+            .prepare(
+                "SELECT id, email, user_id, user_key, usage_count
+                 FROM accounts
+                 WHERE usage_count > 0
+                 ORDER BY usage_count DESC, last_used ASC
+                 LIMIT 1",
+            )
+            .ok()?;
+
+        stmt.query_row([], |row| {
+            Ok(AccountInfo {
+                id: row.get(0)?,
+                email: row.get(1)?,
+                user_id: row.get(2)?,
+                user_key: row.get(3)?,
+                usage_count: row.get(4)?,
+            })
+        })
+        .ok()
+    }
+
+    pub fn get_account_summary(&self) -> Result<Vec<AccountInfo>, String> {
+        let db = self.db.lock().unwrap();
+        let mut stmt = db
+            .prepare(
+                "SELECT id, email, user_id, user_key, usage_count FROM accounts ORDER BY id",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let accounts = stmt
+            .query_map([], |row| {
+                Ok(AccountInfo {
+                    id: row.get(0)?,
+                    email: row.get(1)?,
+                    user_id: row.get(2)?,
+                    user_key: row.get(3)?,
+                    usage_count: row.get(4)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(accounts)
+    }
+
+    pub async fn refresh_account_quota(&self, id: i64) -> Result<i32, String> {
+        use crate::client;
+        let account = {
+            let db = self.db.lock().unwrap();
+            db.query_row(
+                "SELECT id, email, user_id, user_key FROM accounts WHERE id = ?1",
+                rusqlite::params![id],
+                |row| Ok(AccountInfo {
+                    id: row.get(0)?,
+                    email: row.get(1)?,
+                    user_id: row.get(2)?,
+                    user_key: row.get(3)?,
+                    usage_count: 0,
+                }),
+            ).map_err(|e| format!("查询账号失败: {e}"))?
+        };
+
+        let uid_str = account.user_id.to_string();
+        let cookie = client::session_cookie_str_with(&uid_str, &account.user_key);
+        let url = client::make_url("/");
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::HOST, reqwest::header::HeaderValue::from_static(client::ORIGIN_DOMAIN));
+        headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+        ));
+        headers.insert(reqwest::header::ACCEPT, reqwest::header::HeaderValue::from_static("text/html,*/*;q=0.01"));
+        headers.insert(reqwest::header::ACCEPT_LANGUAGE, reqwest::header::HeaderValue::from_static("zh-CN,zh;q=0.9,en;q=0.8"));
+        headers.insert(reqwest::header::COOKIE, reqwest::header::HeaderValue::from_str(&cookie).map_err(|e| e.to_string())?);
+
+        let resp = client::get_with_challenge_and_account(&url, Some((&uid_str, &account.user_key))).await?;
+
+        let html = resp.text().await.map_err(|e| format!("读取页面失败: {e}"))?;
+
+        let remaining = parse_remaining_downloads(&html);
+        let new_count = remaining.unwrap_or(-1);
+
+        self.db.lock().unwrap()
+            .execute(
+                "UPDATE accounts SET usage_count = ?1 WHERE id = ?2",
+                rusqlite::params![new_count, id],
+            )
+            .map_err(|e| e.to_string())?;
+
+        Ok(new_count)
+    }
+
+    pub async fn refresh_all_quotas(&self) -> Result<Vec<(i64, String, i32)>, String> {
+        let accounts = self.list_accounts()?;
+        let mut results = Vec::new();
+
+        for acct in &accounts {
+            let count = self.refresh_account_quota(acct.id).await.unwrap_or(-1);
+            results.push((acct.id, acct.email.clone(), count));
+        }
+
+        Ok(results)
+    }
 }
 
 fn db_path() -> PathBuf {
@@ -856,6 +1031,28 @@ fn db_path() -> PathBuf {
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
         .unwrap_or_else(|| PathBuf::from("."))
         .join("zlibrary_accounts.db")
+}
+
+fn parse_remaining_downloads(html: &str) -> Option<i32> {
+    let re = regex::Regex::new(
+        r#"(?s)caret-scroll__title[^>]*>\s*(\d+)/(\d+)\s*</div>\s*<div[^>]*class="caret-scroll__desc"[^>]*>.*?<span>\s*Daily limit\s*</span>"#
+    ).ok()?;
+    if let Some(cap) = re.captures(html) {
+        let used: i32 = cap[1].parse().ok()?;
+        let total: i32 = cap[2].parse().ok()?;
+        return Some(total - used);
+    }
+
+    let re = regex::Regex::new(
+        r#"(?s)<div class="caret-scroll__title">\s*(\d+)/(\d+)\s*</div>"#
+    ).ok()?;
+    if let Some(cap) = re.captures(html) {
+        let used: i32 = cap[1].parse().ok()?;
+        let total: i32 = cap[2].parse().ok()?;
+        return Some(total - used);
+    }
+
+    None
 }
 
 fn now_str() -> String {
