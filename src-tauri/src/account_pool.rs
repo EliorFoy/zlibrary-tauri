@@ -209,8 +209,8 @@ impl AccountPool {
             })?;
         #[cfg(debug_assertions)] eprintln!("[DEBUG] send-code 成功");
 
-        if let Err(e) = self.load_verify_modal_with_client(&email, &client).await {
-            #[cfg(debug_assertions)] eprintln!("[DEBUG] load_verify_modal 失败: {e}");
+        if let Err(_e) = self.load_verify_modal_with_client(&email, &client).await {
+            #[cfg(debug_assertions)] eprintln!("[DEBUG] load_verify_modal 失败: {_e}");
         }
 
         let code = receiver.wait_for_code("z-lib", 60).await.map_err(|e| {
