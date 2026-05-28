@@ -206,7 +206,9 @@ jobs:
 
       - name: Init Android project
         run: cargo tauri android init
-        continue-on-error: true
+
+      - name: Create missing tauri.settings.gradle
+        run: echo "// Tauri Android Settings" > src-tauri/gen/android/tauri.settings.gradle
 
       - name: Build Android APK
         run: cargo tauri android build --apk
