@@ -186,6 +186,20 @@ async fn open_file_location(path: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
 
+    #[cfg(target_os = "android")]
+    {
+        // Android doesn't support opening file locations directly
+        let _ = path; // Suppress unused variable warning
+        return Err("Opening file location is not supported on Android".to_string());
+    }
+
+    #[cfg(target_os = "ios")]
+    {
+        // iOS doesn't support opening file locations directly
+        let _ = path; // Suppress unused variable warning
+        return Err("Opening file location is not supported on iOS".to_string());
+    }
+
     Ok(())
 }
 
