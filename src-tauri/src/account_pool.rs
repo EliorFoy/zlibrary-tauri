@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -73,7 +72,7 @@ impl AccountPool {
     }
 
     pub fn new() -> Result<Self, String> {
-        let path = db_path();
+        let path = db_path()?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
         }
@@ -134,7 +133,6 @@ impl AccountPool {
             })
             .ok()?;
 
-        let now = now_str();
         let new_count = if account.usage_count > 0 {
             account.usage_count - 1
         } else {
@@ -143,8 +141,8 @@ impl AccountPool {
 
         self.db.lock().unwrap()
             .execute(
-                "UPDATE accounts SET last_used = ?1, usage_count = ?2 WHERE id = ?3",
-                rusqlite::params![now, new_count, account.id],
+                "UPDATE accounts SET last_used = datetime('now'), usage_count = ?1 WHERE id = ?2",
+                rusqlite::params![new_count, account.id],
             )
             .ok()?;
 
@@ -408,8 +406,8 @@ impl AccountPool {
         self.db.lock().unwrap()
             .execute(
                 "INSERT OR IGNORE INTO accounts (email, password, username, user_id, user_key, registration_date, usage_count)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 10)",
-                rusqlite::params![email, password, name, user_id, user_key, now_str()],
+                 VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'), 10)",
+                rusqlite::params![email, password, name, user_id, user_key],
             )
             .map_err(|e| format!("保存账号失败: {e}"))?;
 
@@ -529,8 +527,8 @@ impl AccountPool {
         self.db.lock().unwrap()
             .execute(
                 "INSERT OR IGNORE INTO accounts (email, password, username, user_id, user_key, registration_date, usage_count)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 10)",
-                rusqlite::params![email, password, name, user_id, user_key, now_str()],
+                 VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'), 10)",
+                rusqlite::params![email, password, name, user_id, user_key],
             )
             .map_err(|e| format!("保存账号失败: {e}"))?;
 
@@ -809,8 +807,8 @@ impl AccountPool {
         self.db.lock().unwrap()
             .execute(
                 "INSERT OR IGNORE INTO accounts (email, password, username, user_id, user_key, registration_date, usage_count)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 10)",
-                rusqlite::params![email, password, name, user_id, user_key, now_str()],
+                 VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'), 10)",
+                rusqlite::params![email, password, name, user_id, user_key],
             )
             .map_err(|e| format!("保存账号失败: {e}"))?;
 
@@ -1025,12 +1023,8 @@ impl AccountPool {
     }
 }
 
-fn db_path() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("zlibrary_accounts.db")
+fn db_path() -> Result<std::path::PathBuf, String> {
+    crate::paths::account_db_path()
 }
 
 fn parse_remaining_downloads(html: &str) -> Option<i32> {
@@ -1053,15 +1047,4 @@ fn parse_remaining_downloads(html: &str) -> Option<i32> {
     }
 
     None
-}
-
-fn now_str() -> String {
-    std::process::Command::new("powershell")
-        .args(["-NoProfile", "-Command", "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| s.len() >= 19)
-        .unwrap_or_else(|| "2025-01-01 00:00:00".to_string())
 }

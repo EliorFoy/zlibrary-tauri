@@ -82,8 +82,11 @@ pub async fn download_book_with_progress(
 
     let rewritten = client::rewrite_url(url);
     let filename = build_filename(book);
-    let download_dir = dirs::download_dir().ok_or("无法获取下载目录")?;
+    let download_dir = crate::paths::downloads_dir()?;
     let save_path = download_dir.join(&filename);
+    if let Some(parent) = save_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建下载目录失败: {e}"))?;
+    }
 
     let redirect_url = follow_redirect(&rewritten, account).await?;
 

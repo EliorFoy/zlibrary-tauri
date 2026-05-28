@@ -4,6 +4,7 @@ pub mod download;
 pub mod logger;
 pub mod mail_receiver;
 pub mod model;
+pub mod paths;
 pub mod search;
 pub mod solver;
 
@@ -159,46 +160,99 @@ async fn send_registration_code(
 async fn open_file_location(path: String) -> Result<(), String> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let _ = path; // Suppress unused variable warning
-        return Err("Opening file location is not supported on mobile platforms".to_string());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg("/select,")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let p = std::path::Path::new(&path);
-        let dir = p.parent().unwrap_or(p);
-        std::process::Command::new("open")
-            .arg(dir)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let p = std::path::Path::new(&path);
-        let dir = p.parent().unwrap_or(p);
-        std::process::Command::new("xdg-open")
-            .arg(dir)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "android", target_os = "ios")))]
-    {
         let _ = path;
-        Err("Unsupported platform".to_string())
+        Err("当前移动平台不支持打开文件所在位置".to_string())
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let target = std::path::PathBuf::from(path);
+        if !target.exists() {
+            return Err(format!("路径不存在: {}", target.display()));
+        }
+
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        let dir = if target.is_dir() {
+            target.clone()
+        } else {
+            target
+                .parent()
+                .ok_or_else(|| format!("无法获取父目录: {}", target.display()))?
+                .to_path_buf()
+        };
+
+        #[cfg(target_os = "windows")]
+        {
+            std::process::Command::new("explorer")
+                .arg(format!("/select,{}", target.display()))
+                .spawn()
+                .map_err(|e| format!("打开资源管理器失败: {e}"))?;
+            return Ok(());
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let status = std::process::Command::new("open")
+                .arg("-R")
+                .arg(&target)
+                .status()
+                .map_err(|e| format!("打开 Finder 失败: {e}"))?;
+            if status.success() {
+                return Ok(());
+            }
+
+            return std::process::Command::new("open")
+                .arg(&dir)
+                .status()
+                .map_err(|e| format!("打开 Finder 失败: {e}"))
+                .and_then(|s| {
+                    if s.success() {
+                        Ok(())
+                    } else {
+                        Err(format!("Finder 返回失败状态: {s}"))
+                    }
+                });
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            return match std::process::Command::new("xdg-open").arg(&dir).status() {
+                Ok(status) if status.success() => Ok(()),
+                Ok(status) => {
+                    let fallback = std::process::Command::new("gio")
+                        .arg("open")
+                        .arg(&dir)
+                        .status();
+                    match fallback {
+                        Ok(fallback_status) if fallback_status.success() => Ok(()),
+                        Ok(fallback_status) => Err(format!(
+                            "打开目录失败: xdg-open={status}, gio={fallback_status}"
+                        )),
+                        Err(e) => Err(format!("打开目录失败: xdg-open={status}, gio={e}")),
+                    }
+                }
+                Err(e) => {
+                    let fallback = std::process::Command::new("gio")
+                        .arg("open")
+                        .arg(&dir)
+                        .status();
+                    match fallback {
+                        Ok(fallback_status) if fallback_status.success() => Ok(()),
+                        Ok(fallback_status) => {
+                            Err(format!("打开目录失败: xdg-open={e}, gio={fallback_status}"))
+                        }
+                        Err(fallback_err) => {
+                            Err(format!("打开目录失败: xdg-open={e}, gio={fallback_err}"))
+                        }
+                    }
+                }
+            };
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        {
+            Err("Unsupported platform".to_string())
+        }
     }
 }
 
@@ -271,13 +325,24 @@ async fn check_download_available(
 #[cfg(feature = "gui")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let pool = AccountPool::new().expect("初始化账号数据库失败");
-
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(Mutex::new(pool))
+        .setup(|app| {
+            use tauri::Manager;
+
+            paths::configure_tauri_paths(app);
+            logger::init();
+            let pool = AccountPool::new().map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("初始化账号数据库失败: {e}"),
+                )
+            })?;
+            app.manage(Mutex::new(pool));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             search_books,
             download_book,

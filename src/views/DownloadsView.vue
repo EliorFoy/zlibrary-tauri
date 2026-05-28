@@ -14,9 +14,14 @@ function showImg(id: string): boolean {
   return !failedImages.value.has(id);
 }
 
-function openFolder(path: string) {
+async function openFolder(path: string) {
   if (path) {
-    invoke("open_file_location", { path });
+    try {
+      await invoke("open_file_location", { path });
+    } catch (e: any) {
+      const message = typeof e === "string" ? e : e?.message || "无法打开文件位置";
+      window.alert(message);
+    }
   }
 }
 </script>

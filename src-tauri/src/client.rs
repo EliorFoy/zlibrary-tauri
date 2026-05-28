@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -269,23 +268,17 @@ async fn send_request_with_retry_and_account(url: &str, user_id: &str, user_key:
     }
 }
 
-fn ip_cache_path() -> PathBuf {
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| PathBuf::from("."));
-    exe_dir.join("ip_cache")
-}
-
 fn load_cached_ip() -> Option<Ipv4Addr> {
-    let path = ip_cache_path();
+    let path = crate::paths::ip_cache_file().ok()?;
     let content = fs::read_to_string(&path).ok()?;
     let ip_str = content.trim();
     ip_str.parse().ok()
 }
 
 fn save_ip_cache(ip: Ipv4Addr) {
-    let path = ip_cache_path();
+    let Ok(path) = crate::paths::ip_cache_file() else {
+        return;
+    };
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }

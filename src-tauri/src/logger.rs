@@ -1,17 +1,14 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 static LOG: std::sync::LazyLock<Mutex<Option<BufWriter<File>>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
 
 pub fn init() {
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| PathBuf::from("."));
-    let log_path = exe_dir.join("zlibrary.log");
+    let Ok(log_path) = crate::paths::log_file() else {
+        return;
+    };
     match File::create(&log_path) {
         Ok(f) => {
             let mut writer = BufWriter::new(f);
