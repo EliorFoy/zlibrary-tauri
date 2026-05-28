@@ -1,9 +1,10 @@
-dist/
-node_modules/
-package-lock.json
-```
 # Dependencies
 node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+src-tauri/target/
 
 # Environment
 .env
@@ -15,4 +16,12 @@ node_modules/
 
 # Logs
 *.log
-```
+
+# Debug files
+src-tauri/debug_response.html
+
+# Generated icons (if auto-generated)
+src-tauri/icons/
+
+# Rust
+src-tauri/Cargo.lock
