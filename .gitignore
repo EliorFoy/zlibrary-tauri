@@ -19,8 +19,5 @@ src-tauri/target/
 # Debug files
 src-tauri/debug_response.html
 
-# Generated icons (if auto-generated)
-src-tauri/icons/
-
 # Rust
 src-tauri/Cargo.lock
