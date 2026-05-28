@@ -133,11 +133,11 @@ jobs:
         run: npm ci
 
       - name: Init Android project
-        run: npm run tauri android init
+        run: cargo tauri android init
         continue-on-error: true
 
       - name: Build Android APK
-        run: npm run tauri android build --apk
+        run: cargo tauri android build --apk
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
