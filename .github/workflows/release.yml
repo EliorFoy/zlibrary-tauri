@@ -132,6 +132,9 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Install cargo-tauri
+        run: cargo install tauri-cli --version "^2"
+
       - name: Init Android project
         run: cargo tauri android init
         continue-on-error: true
