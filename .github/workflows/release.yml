@@ -205,12 +205,7 @@ jobs:
         run: cargo install tauri-cli --version "^2"
 
       - name: Init Android project
-        run: cargo tauri android init
-
-      - name: Create missing gradle files
-        run: |
-          echo "// Tauri Android Settings" > src-tauri/gen/android/tauri.settings.gradle
-          echo "// Tauri Build Settings" > src-tauri/gen/android/app/tauri.build.gradle.kts
+        run: cargo tauri android init --skip-targets-install
 
       - name: Build Android APK
         run: cargo tauri android build --apk
