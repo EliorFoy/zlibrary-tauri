@@ -20,7 +20,7 @@ async fn main() {
     eprintln!("  rewritten: {rewritten}");
 
     eprintln!("\n--- testing follow_redirect ---");
-    let resp = client::get_with_challenge(&rewritten).await.expect("get_with_challenge");
+    let mut resp = client::get_with_challenge(&rewritten).await.expect("get_with_challenge");
     let status = resp.status();
     eprintln!("  status: {status}");
     eprintln!("  final url: {}", resp.url());
