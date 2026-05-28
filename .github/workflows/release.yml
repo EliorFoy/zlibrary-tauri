@@ -132,6 +132,10 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Init Android project
+        run: npm run tauri android init
+        continue-on-error: true
+
       - name: Build Android APK
         run: npm run tauri android build --apk
         env:
