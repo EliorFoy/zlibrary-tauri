@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::Write;
 
 fn main() {
     let body = fs::read_to_string("challenge_full.html").unwrap();
