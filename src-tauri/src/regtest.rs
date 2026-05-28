@@ -26,10 +26,6 @@ fn build_client(ip: std::net::Ipv4Addr) -> reqwest::Client {
         .expect("build_client")
 }
 
-macro_rules! step {
-    ($msg:expr) => { println!("\n>>> {} <<<", $msg); };
-}
-
 #[tokio::main]
 async fn main() {
     println!("=== Z-Library 注册诊断（多IP多策略） ===\n");
