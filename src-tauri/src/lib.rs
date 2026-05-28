@@ -157,6 +157,12 @@ async fn send_registration_code(
 #[cfg(feature = "gui")]
 #[tauri::command]
 async fn open_file_location(path: String) -> Result<(), String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = path; // Suppress unused variable warning
+        return Err("Opening file location is not supported on mobile platforms".to_string());
+    }
+
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
@@ -164,6 +170,7 @@ async fn open_file_location(path: String) -> Result<(), String> {
             .arg(&path)
             .spawn()
             .map_err(|e| e.to_string())?;
+        return Ok(());
     }
 
     #[cfg(target_os = "macos")]
@@ -174,6 +181,7 @@ async fn open_file_location(path: String) -> Result<(), String> {
             .arg(dir)
             .spawn()
             .map_err(|e| e.to_string())?;
+        return Ok(());
     }
 
     #[cfg(target_os = "linux")]
@@ -184,23 +192,14 @@ async fn open_file_location(path: String) -> Result<(), String> {
             .arg(dir)
             .spawn()
             .map_err(|e| e.to_string())?;
+        return Ok(());
     }
 
-    #[cfg(target_os = "android")]
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "android", target_os = "ios")))]
     {
-        // Android doesn't support opening file locations directly
-        let _ = path; // Suppress unused variable warning
-        return Err("Opening file location is not supported on Android".to_string());
+        let _ = path;
+        Err("Unsupported platform".to_string())
     }
-
-    #[cfg(target_os = "ios")]
-    {
-        // iOS doesn't support opening file locations directly
-        let _ = path; // Suppress unused variable warning
-        return Err("Opening file location is not supported on iOS".to_string());
-    }
-
-    Ok(())
 }
 
 #[cfg(feature = "gui")]
