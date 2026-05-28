@@ -16,15 +16,77 @@ permissions:
   contents: write
 
 jobs:
-  # ── Desktop: Windows / macOS / Linux ──────────────────────────────
+  prepare-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cat > RELEASE_NOTES.md <<'EOF'
+          # Z-Library NoProxy ${{ github.ref_name }}
+
+          A cross-platform Z-Library client with desktop GUI, command-line tools, and Android APK builds.
+
+          ## Highlights
+
+          - Android release APK builds with the Tauri GUI feature enabled.
+          - Runtime data now uses platform app data/cache/log directories instead of the executable folder.
+          - Linux AppImage startup is more robust because the app no longer writes into the temporary AppImage mount.
+          - Download paths are checked for writability and fall back to an app-private downloads directory when needed.
+          - Opening a downloaded file location now reports clear platform errors.
+
+          ## Downloads
+
+          | Edition | Platform | Asset name pattern |
+          | --- | --- | --- |
+          | GUI | Windows | `Z-Library-NoProxy-GUI-Windows-x64-*` |
+          | GUI | macOS | `Z-Library-NoProxy-GUI-macOS-*-DMG.dmg` |
+          | GUI | Linux | `Z-Library-NoProxy-GUI-Linux-x64-*` |
+          | CLI | Windows | `Z-Library-NoProxy-CLI-Windows-x64.zip` |
+          | CLI | macOS | `Z-Library-NoProxy-CLI-macOS-*.tar.gz` |
+          | CLI | Linux | `Z-Library-NoProxy-CLI-Linux-x64.tar.gz` |
+          | Android | APK | `Z-Library-NoProxy-Android-*` |
+
+          ## Platform Notes
+
+          - macOS desktop builds are included in the release workflow.
+          - Android APK outputs are uploaded to the Release page and also kept as workflow artifacts.
+          - iOS is not included yet. A real iOS release needs an iOS Tauri setup plus Apple signing certificates and provisioning profiles.
+          EOF
+
+      - name: Create or update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          title="Z-Library NoProxy ${TAG}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "$title" \
+              --notes-file RELEASE_NOTES.md \
+              --draft=false \
+              --prerelease=false
+          else
+            gh release create "$TAG" \
+              --title "$title" \
+              --notes-file RELEASE_NOTES.md \
+              --verify-tag
+          fi
+
   desktop:
+    needs: prepare-release
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+        include:
+          - os: ubuntu-latest
+            platform: Linux
+          - os: macos-latest
+            platform: macOS
+          - os: windows-latest
+            platform: Windows
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -55,86 +117,99 @@ jobs:
         run: npm ci
 
       - name: Build Tauri GUI
-        uses: tauri-apps/tauri-action@action-v0.6.2
-        id: tauri_build
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Z-Library NoProxy v__VERSION__"
-          releaseBody: |
-            ## 📚 Z-Library NoProxy v__VERSION__
-
-            一个无需代理即可访问 Z-Library 的桌面应用。
-
-            ---
-
-            ### 🖥️ GUI 桌面版
-
-            | 平台 | 安装包 |
-            |------|--------|
-            | Windows | `.msi` 或 `.exe` 安装程序 |
-            | macOS | `.dmg` 安装程序 |
-            | Linux | `.deb` / `.rpm` / `.AppImage` |
-
-            ### 💻 CLI 命令行版
-
-            | 平台 | 下载 |
-            |------|------|
-            | Windows | `zlibrary-cli-Windows-X64.zip` |
-            | macOS | `zlibrary-cli-macOS-arm64.tar.gz` / `zlibrary-cli-macOS-x86_64.tar.gz` |
-            | Linux | `zlibrary-cli-Linux-x86_64.tar.gz` |
-
-            ### 📱 Android 版
-
-            APK 文件请在 Actions 构建产物中下载。
-
-            ---
-
-            **使用说明：**
-            - GUI 版本：下载安装后直接运行
-            - CLI 版本：解压后在终端运行 `./zlibrary-cli`
-          releaseDraft: false
-          prerelease: false
+        run: npm run tauri build
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
-      - name: Build Tauri GUI (no release)
-        if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
-        run: npm run tauri build
+      - name: Stage GUI release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $arch = switch ($env:RUNNER_ARCH) {
+            "X64" { "x64"; break }
+            "ARM64" { "arm64"; break }
+            default { $env:RUNNER_ARCH.ToLowerInvariant() }
+          }
+          $platform = "${{ matrix.platform }}"
+          $outDir = "release-assets"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          $bundleDir = "src-tauri/target/release/bundle"
+          $files = Get-ChildItem -Path $bundleDir -Recurse -File |
+            Where-Object { $_.Name -match '\.(msi|exe|dmg|AppImage|deb|rpm)$' }
+
+          if (-not $files) {
+            throw "No GUI bundle files found in $bundleDir"
+          }
+
+          foreach ($file in $files) {
+            $kind = switch -Wildcard ($file.Name) {
+              "*.msi" { "MSI"; break }
+              "*.exe" { "Setup"; break }
+              "*.dmg" { "DMG"; break }
+              "*.AppImage" { "AppImage"; break }
+              "*.deb" { "DEB"; break }
+              "*.rpm" { "RPM"; break }
+              default { "Bundle" }
+            }
+            $extension = if ($file.Name -like "*.AppImage") { ".AppImage" } else { $file.Extension }
+            $target = Join-Path $outDir "Z-Library-NoProxy-GUI-$platform-$arch-$kind$extension"
+            Copy-Item -LiteralPath $file.FullName -Destination $target -Force
+          }
+
+          Get-ChildItem -Path $outDir
+
+      - name: Upload GUI assets to release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: gh release upload ${{ github.ref_name }} release-assets/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build CLI binaries
         if: startsWith(github.ref, 'refs/tags/')
         working-directory: src-tauri
         run: cargo build --release --features cli --bin zlibrary-cli --bin zlibrary-diagnose --bin zlibrary-fetch-challenge --bin zlibrary-show-script --bin zlibrary-test-search --bin zlibrary-regtest
 
-      - name: Package CLI (Unix)
-        if: startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows'
+      - name: Package CLI
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
         run: |
-          mkdir -p cli-release
-          cp src-tauri/target/release/zlibrary-cli cli-release/
-          cp src-tauri/target/release/zlibrary-diagnose cli-release/
-          cp src-tauri/target/release/zlibrary-fetch-challenge cli-release/
-          cp src-tauri/target/release/zlibrary-show-script cli-release/
-          cp src-tauri/target/release/zlibrary-test-search cli-release/
-          cp src-tauri/target/release/zlibrary-regtest cli-release/
-          cd cli-release && tar -czvf zlibrary-cli-${{ runner.os }}-${{ runner.arch }}.tar.gz *
+          $arch = switch ($env:RUNNER_ARCH) {
+            "X64" { "x64"; break }
+            "ARM64" { "arm64"; break }
+            default { $env:RUNNER_ARCH.ToLowerInvariant() }
+          }
+          $platform = "${{ matrix.platform }}"
+          $binDir = "src-tauri/target/release"
+          $workDir = "cli-release"
+          $outDir = "release-assets"
+          New-Item -ItemType Directory -Force -Path $workDir, $outDir | Out-Null
 
-      - name: Package CLI (Windows)
-        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
-        run: |
-          mkdir cli-release
-          Copy-Item src-tauri/target/release/zlibrary-cli.exe cli-release/
-          Copy-Item src-tauri/target/release/zlibrary-diagnose.exe cli-release/
-          Copy-Item src-tauri/target/release/zlibrary-fetch-challenge.exe cli-release/
-          Copy-Item src-tauri/target/release/zlibrary-show-script.exe cli-release/
-          Copy-Item src-tauri/target/release/zlibrary-test-search.exe cli-release/
-          Copy-Item src-tauri/target/release/zlibrary-regtest.exe cli-release/
-          Compress-Archive -Path cli-release/* -DestinationPath cli-release/zlibrary-cli-${{ runner.os }}-${{ runner.arch }}.zip
+          $exe = if ($env:RUNNER_OS -eq "Windows") { ".exe" } else { "" }
+          $binaries = @(
+            "zlibrary-cli",
+            "zlibrary-diagnose",
+            "zlibrary-fetch-challenge",
+            "zlibrary-show-script",
+            "zlibrary-test-search",
+            "zlibrary-regtest"
+          )
+          foreach ($binary in $binaries) {
+            Copy-Item -LiteralPath "$binDir/$binary$exe" -Destination $workDir -Force
+          }
+
+          $baseName = "Z-Library-NoProxy-CLI-$platform-$arch"
+          if ($env:RUNNER_OS -eq "Windows") {
+            Compress-Archive -Path "$workDir/*" -DestinationPath "$outDir/$baseName.zip" -Force
+          } else {
+            tar -czvf "$outDir/$baseName.tar.gz" -C $workDir .
+          }
+
+          Get-ChildItem -Path $outDir -Filter "$baseName*"
 
       - name: Upload CLI to release
         if: startsWith(github.ref, 'refs/tags/')
-        run: gh release upload ${{ github.ref_name }} cli-release/zlibrary-cli-* --clobber
+        run: gh release upload ${{ github.ref_name }} release-assets/Z-Library-NoProxy-CLI-* --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -142,14 +217,14 @@ jobs:
         uses: actions/upload-artifact@v4
         if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
         with:
-          name: zlibrary-${{ runner.os }}
+          name: Z-Library-NoProxy-GUI-${{ matrix.platform }}-${{ runner.arch }}
           path: |
             src-tauri/target/release/bundle/
             !src-tauri/target/release/bundle/**/*.sig
             !src-tauri/target/release/bundle/**/*.json
 
-  # ── Android (APK) ────────────────────────────────────────────────
   android:
+    needs: prepare-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -210,11 +285,49 @@ jobs:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
+      - name: Stage Android release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $outDir = "release-assets"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          $outputsDir = "src-tauri/gen/android/app/build/outputs"
+          $files = Get-ChildItem -Path $outputsDir -Recurse -File |
+            Where-Object { $_.Name -match '\.(apk|aab)$' }
+
+          if (-not $files) {
+            throw "No Android APK/AAB files found in $outputsDir"
+          }
+
+          foreach ($file in $files) {
+            $variant = $file.BaseName -replace '^app-', ''
+            $variant = $variant -replace '[^A-Za-z0-9]+', '-'
+            $variant = $variant.Trim('-')
+            if (-not $variant) {
+              $variant = "Universal"
+            }
+            $prettyVariant = (($variant -split '-') | Where-Object { $_ } | ForEach-Object {
+              $_.Substring(0, 1).ToUpperInvariant() + $_.Substring(1).ToLowerInvariant()
+            }) -join '-'
+            $kind = $file.Extension.TrimStart('.').ToUpperInvariant()
+            $target = Join-Path $outDir "Z-Library-NoProxy-Android-$prettyVariant-$kind$($file.Extension)"
+            Copy-Item -LiteralPath $file.FullName -Destination $target -Force
+          }
+
+          Get-ChildItem -Path $outDir
+
+      - name: Upload Android assets to release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: gh release upload ${{ github.ref_name }} release-assets/Z-Library-NoProxy-Android-* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: zlibrary-android
+          name: Z-Library-NoProxy-Android
           path: |
             src-tauri/gen/android/app/build/outputs/apk/
             src-tauri/gen/android/app/build/outputs/bundle/
