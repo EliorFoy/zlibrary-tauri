@@ -169,6 +169,7 @@ async fn open_file(path: String) -> Result<(), String> {
             .args(["/C", "start", "", &path])
             .spawn()
             .map_err(|e| format!("打开文件失败: {e}"))?;
+        return Ok(());
     }
 
     #[cfg(target_os = "macos")]
@@ -177,6 +178,7 @@ async fn open_file(path: String) -> Result<(), String> {
             .arg(&path)
             .spawn()
             .map_err(|e| format!("打开文件失败: {e}"))?;
+        return Ok(());
     }
 
     #[cfg(target_os = "linux")]
@@ -185,15 +187,18 @@ async fn open_file(path: String) -> Result<(), String> {
             .arg(&path)
             .spawn()
             .map_err(|e| format!("打开文件失败: {e}"))?;
+        return Ok(());
     }
 
     #[cfg(target_os = "android")]
     {
-        let _ = path;
-        return Err("Android 暂不支持打开文件".to_string());
+        Err("Android 暂不支持打开文件".to_string())
     }
 
-    Ok(())
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "android")))]
+    {
+        Err("当前平台不支持打开文件".to_string())
+    }
 }
 
 #[cfg(feature = "gui")]
