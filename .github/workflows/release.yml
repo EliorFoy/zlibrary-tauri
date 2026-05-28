@@ -54,23 +54,89 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build Tauri
+      - name: Build Tauri GUI
         uses: tauri-apps/tauri-action@action-v0.6.2
         id: tauri_build
         if: startsWith(github.ref, 'refs/tags/')
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "v__VERSION__"
-          releaseBody: "请参见下方 assets 下载对应平台的安装包。"
-          releaseDraft: true
+          releaseName: "Z-Library NoProxy v__VERSION__"
+          releaseBody: |
+            ## 📚 Z-Library NoProxy v__VERSION__
+
+            一个无需代理即可访问 Z-Library 的桌面应用。
+
+            ---
+
+            ### 🖥️ GUI 桌面版
+
+            | 平台 | 安装包 |
+            |------|--------|
+            | Windows | `.msi` 或 `.exe` 安装程序 |
+            | macOS | `.dmg` 安装程序 |
+            | Linux | `.deb` / `.rpm` / `.AppImage` |
+
+            ### 💻 CLI 命令行版
+
+            | 平台 | 下载 |
+            |------|------|
+            | Windows | `zlibrary-cli-Windows-X64.zip` |
+            | macOS | `zlibrary-cli-macOS-arm64.tar.gz` / `zlibrary-cli-macOS-x86_64.tar.gz` |
+            | Linux | `zlibrary-cli-Linux-x86_64.tar.gz` |
+
+            ### 📱 Android 版
+
+            APK 文件请在 Actions 构建产物中下载。
+
+            ---
+
+            **使用说明：**
+            - GUI 版本：下载安装后直接运行
+            - CLI 版本：解压后在终端运行 `./zlibrary-cli`
+          releaseDraft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
-      - name: Build Tauri (no release)
+      - name: Build Tauri GUI (no release)
         if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
         run: npm run tauri build
+
+      - name: Build CLI binaries
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: src-tauri
+        run: cargo build --release --features cli --bin zlibrary-cli --bin zlibrary-diagnose --bin zlibrary-fetch-challenge --bin zlibrary-show-script --bin zlibrary-test-search --bin zlibrary-regtest
+
+      - name: Package CLI (Unix)
+        if: startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows'
+        run: |
+          mkdir -p cli-release
+          cp src-tauri/target/release/zlibrary-cli cli-release/
+          cp src-tauri/target/release/zlibrary-diagnose cli-release/
+          cp src-tauri/target/release/zlibrary-fetch-challenge cli-release/
+          cp src-tauri/target/release/zlibrary-show-script cli-release/
+          cp src-tauri/target/release/zlibrary-test-search cli-release/
+          cp src-tauri/target/release/zlibrary-regtest cli-release/
+          cd cli-release && tar -czvf zlibrary-cli-${{ runner.os }}-${{ runner.arch }}.tar.gz *
+
+      - name: Package CLI (Windows)
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
+        run: |
+          mkdir cli-release
+          Copy-Item src-tauri/target/release/zlibrary-cli.exe cli-release/
+          Copy-Item src-tauri/target/release/zlibrary-diagnose.exe cli-release/
+          Copy-Item src-tauri/target/release/zlibrary-fetch-challenge.exe cli-release/
+          Copy-Item src-tauri/target/release/zlibrary-show-script.exe cli-release/
+          Copy-Item src-tauri/target/release/zlibrary-test-search.exe cli-release/
+          Copy-Item src-tauri/target/release/zlibrary-regtest.exe cli-release/
+          Compress-Archive -Path cli-release/* -DestinationPath cli-release/zlibrary-cli-${{ runner.os }}-${{ runner.arch }}.zip
+
+      - name: Upload CLI to release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: gh release upload ${{ github.ref_name }} cli-release/zlibrary-cli-* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4
