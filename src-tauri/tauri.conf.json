@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicholasio/tauri-json-schema/refs/heads/main/v2/tauri-config.schema.json",
   "productName": "Z-Library NoProxy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.zlibrary.noproxy",
   "build": {
     "frontendDist": "../dist",
