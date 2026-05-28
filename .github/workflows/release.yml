@@ -55,7 +55,6 @@ jobs:
         uses: tauri-apps/tauri-action@v2
         id: tauri_build
         with:
-          projectPath: src-tauri
           tagName: ${{ github.ref_name }}
           releaseName: "v__VERSION__"
           releaseBody: "请参见下方 assets 下载对应平台的安装包。"

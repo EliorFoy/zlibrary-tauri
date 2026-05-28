@@ -44,7 +44,7 @@ jobs:
         run: npm run build
 
       - name: Rust check (CLI)
-        run: cargo build --features cli --release
+        run: cargo build --features cli --release --manifest-path src-tauri/Cargo.toml
 
       - name: Rust check (GUI)
-        run: cargo build --features gui --release
+        run: cargo build --features gui --release --manifest-path src-tauri/Cargo.toml
