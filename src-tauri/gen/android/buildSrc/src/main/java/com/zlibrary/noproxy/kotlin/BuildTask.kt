@@ -5,8 +5,6 @@ import org.gradle.api.GradleException
 import org.gradle.api.logging.LogLevel
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.TaskAction
-import org.gradle.api.Action
-import org.gradle.process.ExecSpec
 
 open class BuildTask : DefaultTask() {
     @Input
@@ -50,31 +48,21 @@ open class BuildTask : DefaultTask() {
         val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
         val target = target ?: throw GradleException("target cannot be null")
         val release = release ?: throw GradleException("release cannot be null")
-        val args = mutableListOf("run", "--", "tauri", "android", "android-studio-script")
+        val args = listOf("run", "--", "tauri", "android", "android-studio-script");
 
-        if (project.logger.isEnabled(LogLevel.DEBUG)) {
-            args.add("-vv")
-        } else if (project.logger.isEnabled(LogLevel.INFO)) {
-            args.add("-v")
-        }
-        if (release) {
-            args.add("--release")
-        }
-        args.add("--target")
-        args.add(target)
-
-        val workDir = File(project.projectDir, rootDirRel)
-        val command = mutableListOf(executable)
-        command.addAll(args)
-
-        val process = ProcessBuilder(command)
-            .directory(workDir)
-            .inheritIO()
-            .start()
-
-        val exitCode = process.waitFor()
-        if (exitCode != 0) {
-            throw GradleException("Command failed with exit code $exitCode")
-        }
+        project.exec {
+            workingDir(File(project.projectDir, rootDirRel))
+            executable(executable)
+            args(args)
+            if (project.logger.isEnabled(LogLevel.DEBUG)) {
+                args("-vv")
+            } else if (project.logger.isEnabled(LogLevel.INFO)) {
+                args("-v")
+            }
+            if (release) {
+                args("--release")
+            }
+            args(listOf("--target", target))
+        }.assertNormalExitValue()
     }
 }
