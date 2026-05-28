@@ -7,12 +7,6 @@ pub mod model;
 pub mod search;
 pub mod solver;
 
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use account_pool::{AccountInfo, AccountPool};
-use download::{self, ProgressCallback};
-use model::{BookInfo, SearchResult};
-
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {
@@ -20,12 +14,25 @@ macro_rules! log_info {
     };
 }
 
+#[cfg(feature = "gui")]
+use std::sync::Arc;
+#[cfg(feature = "gui")]
+use tokio::sync::Mutex;
+#[cfg(feature = "gui")]
+use account_pool::{AccountInfo, AccountPool};
+#[cfg(feature = "gui")]
+use download::ProgressCallback;
+#[cfg(feature = "gui")]
+use model::{BookInfo, SearchResult};
+
+#[cfg(feature = "gui")]
 struct DownloadProgress {
     app: tauri::AppHandle,
     last_pct: std::sync::atomic::AtomicU32,
     download_id: String,
 }
 
+#[cfg(feature = "gui")]
 impl ProgressCallback for DownloadProgress {
     fn on_start(&self, total_bytes: u64) {
         use tauri::Emitter;
@@ -57,11 +64,13 @@ impl ProgressCallback for DownloadProgress {
     }
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn search_books(query: String, page: u32) -> Result<SearchResult, String> {
     search::search_books(&query, page).await
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn download_book(
     book: BookInfo,
@@ -107,6 +116,7 @@ async fn download_book(
     Ok(path.to_string_lossy().to_string())
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn manual_login(
     email: String,
@@ -118,6 +128,7 @@ async fn manual_login(
     Ok(email)
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn manual_register(
     email: String,
@@ -131,6 +142,7 @@ async fn manual_register(
     Ok(email)
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn send_registration_code(
     email: String,
@@ -142,6 +154,7 @@ async fn send_registration_code(
     pool.send_code_for_email(&email, &password, &name).await
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn open_file_location(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
@@ -176,6 +189,7 @@ async fn open_file_location(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn list_accounts(
     state: tauri::State<'_, Mutex<AccountPool>>,
@@ -184,6 +198,7 @@ async fn list_accounts(
     pool.list_accounts()
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn delete_account(
     id: i64,
@@ -193,6 +208,7 @@ async fn delete_account(
     pool.delete_account(id)
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn refresh_account_quota(
     id: i64,
@@ -202,6 +218,7 @@ async fn refresh_account_quota(
     pool.refresh_account_quota(id).await
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn refresh_all_quotas(
     state: tauri::State<'_, Mutex<AccountPool>>,
@@ -210,6 +227,7 @@ async fn refresh_all_quotas(
     pool.refresh_all_quotas().await
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn set_active_account(
     id: i64,
@@ -219,6 +237,7 @@ async fn set_active_account(
     pool.set_active_account(id)
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn get_active_account(
     state: tauri::State<'_, Mutex<AccountPool>>,
@@ -227,6 +246,7 @@ async fn get_active_account(
     Ok(pool.get_active_account())
 }
 
+#[cfg(feature = "gui")]
 #[tauri::command]
 async fn check_download_available(
     state: tauri::State<'_, Mutex<AccountPool>>,
@@ -235,6 +255,7 @@ async fn check_download_available(
     Ok(pool.has_any_available_account())
 }
 
+#[cfg(feature = "gui")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pool = AccountPool::new().expect("初始化账号数据库失败");
