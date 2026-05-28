@@ -1,3 +1,18 @@
 dist/
 node_modules/
 package-lock.json
+```
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*
+
+# Editors
+.vscode/
+
+# Logs
+*.log
+```
