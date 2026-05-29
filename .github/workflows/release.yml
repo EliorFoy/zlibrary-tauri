@@ -92,6 +92,9 @@ jobs:
           - os: windows-latest
             platform: Windows
     runs-on: ${{ matrix.os }}
+    env:
+      CARGO_NET_RETRY: 5
+      CARGO_HTTP_MULTIPLEXING: false
     steps:
       - uses: actions/checkout@v4
 

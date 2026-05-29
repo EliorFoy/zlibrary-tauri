@@ -37,6 +37,9 @@ jobs:
             name: 'GUI Windows'
 
     runs-on: ${{ matrix.platform }}
+    env:
+      CARGO_NET_RETRY: 5
+      CARGO_HTTP_MULTIPLEXING: false
 
     steps:
       - uses: actions/checkout@v4
@@ -123,6 +126,9 @@ jobs:
             name: 'CLI Windows'
 
     runs-on: ${{ matrix.platform }}
+    env:
+      CARGO_NET_RETRY: 5
+      CARGO_HTTP_MULTIPLEXING: false
 
     steps:
       - uses: actions/checkout@v4
